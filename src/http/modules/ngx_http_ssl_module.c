@@ -35,6 +35,10 @@ static char *ngx_http_ssl_session_cache(ngx_conf_t *cf, ngx_command_t *cmd,
 
 static ngx_int_t ngx_http_ssl_init(ngx_conf_t *cf);
 
+static void ngx_http_ssl_client_handler(ngx_http_request_t *r);
+/* allow access to this for delayed client SSL cert validation */
+static ngx_int_t ngx_http_ssl_client_verify(ngx_http_request_t *r)
+
 
 static ngx_conf_bitmask_t  ngx_http_ssl_protocols[] = {
     { ngx_string("SSLv2"), NGX_SSL_SSLv2 },
@@ -112,6 +116,13 @@ static ngx_command_t  ngx_http_ssl_commands[] = {
       NGX_HTTP_SRV_CONF_OFFSET,
       offsetof(ngx_http_ssl_srv_conf_t, verify),
       &ngx_http_ssl_verify },
+
+    { ngx_string("ssl_verify_client_delayed"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_SRV_CONF_OFFSET,
+      offsetof(ngx_http_ssl_srv_conf_t, verify_delayed),
+      NULL },
 
     { ngx_string("ssl_verify_depth"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_1MORE,
@@ -374,6 +385,7 @@ ngx_http_ssl_create_srv_conf(ngx_conf_t *cf)
     sscf->enable = NGX_CONF_UNSET;
     sscf->prefer_server_ciphers = NGX_CONF_UNSET;
     sscf->verify = NGX_CONF_UNSET_UINT;
+    sscf->verify_delayed = NGX_CONF_UNSET;
     sscf->verify_depth = NGX_CONF_UNSET_UINT;
     sscf->builtin_session_cache = NGX_CONF_UNSET;
     sscf->session_timeout = NGX_CONF_UNSET;
@@ -414,6 +426,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
                           |NGX_SSL_TLSv1_1|NGX_SSL_TLSv1_2));
 
     ngx_conf_merge_uint_value(conf->verify, prev->verify, 0);
+    ngx_conf_merge_value(conf->verify_delayed, prev->verify_delayed, 0);
     ngx_conf_merge_uint_value(conf->verify_depth, prev->verify_depth, 1);
 
     ngx_conf_merge_str_value(conf->certificate, prev->certificate, "");
@@ -720,6 +733,24 @@ invalid:
 }
 
 
+/* this function gets added to the access handler stack */
+static void
+ngx_http_ssl_client_handler(ngx_http_request_t *r)
+{
+    ngx_http_ssl_srv_conf_t *sscf;
+
+    sscf = ngx_http_get_module_loc_conf(r, ngx_http_ssl_module);
+
+    if (sscf->verify && sscf->verify_delayed) {
+		/* the following returns -1 on error */
+		if ngx_http_ssl_client_verify(r)
+			return NGX_DECLINED;  /* in some cases, NGX_ERROR might be nice */
+		}
+		return NGX_OK;
+    }
+}
+
+
 static ngx_int_t
 ngx_http_ssl_init(ngx_conf_t *cf)
 {
@@ -728,6 +759,8 @@ ngx_http_ssl_init(ngx_conf_t *cf)
     ngx_http_core_loc_conf_t    *clcf;
     ngx_http_core_srv_conf_t   **cscfp;
     ngx_http_core_main_conf_t   *cmcf;
+
+    ngx_http_handler_pt        *h;
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
     cscfp = cmcf->servers.elts;
@@ -749,6 +782,19 @@ ngx_http_ssl_init(ngx_conf_t *cf)
             return NGX_ERROR;
         }
     }
+
+	/* For location-level access control using client ssl certificates */
+
+	if (sscf->verify && sscf->verify_delayed) {
+		cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
+
+		h = ngx_array_push(&cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers);
+		if (h == NULL) {
+			return NGX_ERROR;
+		}
+
+		*h = ngx_http_ssl_client_handler;
+	}
 
     return NGX_OK;
 }

@@ -24,6 +24,7 @@ typedef struct {
     ngx_uint_t                      protocols;
 
     ngx_uint_t                      verify;
+    ngx_uint_t                      verify_delayed;
     ngx_uint_t                      verify_depth;
 
     ssize_t                         builtin_session_cache;
