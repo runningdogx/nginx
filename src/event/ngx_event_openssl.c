@@ -194,6 +194,8 @@ ngx_ssl_create(ngx_ssl_t *ssl, ngx_uint_t protocols, void *data)
 
     SSL_CTX_set_options(ssl->ctx, SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS);
 
+	SSL_CTX_set_options(ssl->ctx. SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+
     SSL_CTX_set_options(ssl->ctx, SSL_OP_SINGLE_DH_USE);
 
     if (!(protocols & NGX_SSL_SSLv2)) {
