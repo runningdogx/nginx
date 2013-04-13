@@ -1285,10 +1285,12 @@ ngx_http_add_addresses(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 #endif
 
         if (lsopt->set) {
+            /* The only option allowed to be different: unify before compare */
+            addr[i].opt.default_server = lsopt->default_server;
 
-            if (addr[i].opt.set) {
+            if (addr[i].opt.set && memcmp(lsopt, &(addr[i].opt), sizeof(ngx_http_listen_opt_t))) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                        "duplicate listen options for %s", addr[i].opt.addr);
+                        "inconsistent listen options for %s", addr[i].opt.addr);
                 return NGX_ERROR;
             }
 
